@@ -108,13 +108,36 @@ class Client:
         print(f"Created signature on file {file}")
         return signature
 
-    def encrypt_file(self, file, signature):
+    def extend_pcr(self, file):
+        # Add the hash of the file to the TPM's PCR, and then read the current PCR value
+
+        # Generate SHA256 hash of the file and save to /tmp
+        subprocess.run(f"openssl dgst -sha256 -binary < {file} > {self._TEMP_DIR}/hash.bin", shell=True)
+
+        # Use TPM to extend the PCR with the hash of the file
+        subprocess.run(f"./pcrextend -ha 16 -if {self._TEMP_DIR}/hash.bin", shell=True, cwd=self._TSS_DIR)
+
+        # Remove temporary hash file
+        os.remove(self._TEMP_DIR+"/hash.bin")
+
+        # Get the current value of the PCR
+        output = subprocess.check_output("./pcrread -ha 16 -ns", shell=True, cwd=self._TSS_DIR)
+
+        # Remove newline break from return value
+        output = output[:-1]
+
+        # Format to binary
+        pcr = bytes.fromhex(output.decode())
+
+        return pcr
+
+    def encrypt_file(self, file, signature, pcr_value):
         # Package the file with its signature and public key, then encrypt it
         data = self._public_key.public_bytes(encoding=serialization.Encoding.PEM,
                                              format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
-        # Append the signature to our data
-        data += signature
+        # Append the signature and PCR value to our data
+        data += signature + pcr_value
 
         # Open file and append its contents to our data
         with open(file, "rb") as f:
@@ -144,5 +167,6 @@ if __name__ == "__main__":
     client.tpm_load_key()
 
     sig = client.sign_file(file)
-    enc = client.encrypt_file(file, sig)
+    pcr = client.extend_pcr(file)
+    enc = client.encrypt_file(file, sig, pcr)
     client.send_message(enc)
