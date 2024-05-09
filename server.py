@@ -1,7 +1,7 @@
 import socket
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 
 
 class Server:
@@ -32,21 +32,29 @@ class Server:
         self._conn = self._sock.accept()
         print("Client connected")
 
-    def receive_file(self, filename):
-        f = open(filename, 'wb')
+    def receive_message(self):
+        data = self._conn[0].recv(4096)
+        print("Received encrypted message from client")
 
-        data = self._conn[0].recv(1024)
-        while data:
-            if not data:
-                return
+        plaintext = self.__private_key.decrypt(
+            data,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        print("Successfully decrypted message")
 
-            f.write(data)
-            data = self._conn[0].recv(1024)
+        # Split up the binary data to retrieve the file, signature and public key
+        public_key = plaintext[:451]
+        signature = plaintext[451:713]
+        file = plaintext[713:]
 
-        print("Received file")
+        return public_key, signature, file
 
     def generate_keys(self):
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=8192)
         public_key = private_key.public_key()
 
         self.__private_key = private_key
@@ -74,4 +82,6 @@ class Server:
 if __name__ == '__main__':
     server = Server('127.0.0.1', 8120)
     server.send_public_key()
-    #server.receive_file("output")
+    sig_key, sig, file = server.receive_message()
+
+

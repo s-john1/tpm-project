@@ -2,8 +2,8 @@ import os
 import socket
 import subprocess
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 
@@ -40,20 +40,14 @@ class Client:
         subprocess.run("./createprimary -hi o", shell=True, cwd=self._TSS_DIR)
         print("TPM is setup")
 
-    def send_file(self, filename):
-        f = open(filename, 'rb')
+    def send_message(self, message):
+        self._sock.sendall(message)
 
-        data = f.read()
-        if not data:
-            return
-
-        self._sock.sendall(data)
-
-        print(f"Finished sending file {filename}")
+        print("Finished message data to server")
 
     def receive_public_key(self):
         # Receive the server's public encryption key
-        data = self._sock.recv(1024)
+        data = self._sock.recv(4096)
 
         if not data:
             print("Unable to receive public key from the server")
@@ -114,6 +108,31 @@ class Client:
         print(f"Created signature on file {file}")
         return signature
 
+    def encrypt_file(self, file, signature):
+        # Package the file with its signature and public key, then encrypt it
+        data = self._public_key.public_bytes(encoding=serialization.Encoding.PEM,
+                                             format=serialization.PublicFormat.SubjectPublicKeyInfo)
+
+        # Append the signature to our data
+        data += signature
+
+        # Open file and append its contents to our data
+        with open(file, "rb") as f:
+            file_data = f.read()
+        data += file_data
+
+        # Encrypt our data object with the server's public key
+        ciphertext = self._server_public_key.encrypt(
+            data,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+
+        return ciphertext
+
 
 if __name__ == "__main__":
     file = "text.txt"
@@ -125,5 +144,5 @@ if __name__ == "__main__":
     client.tpm_load_key()
 
     sig = client.sign_file(file)
-    print(sig)
-    #client.send_file("text.txt")
+    enc = client.encrypt_file(file, sig)
+    client.send_message(enc)
