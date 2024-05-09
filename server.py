@@ -37,24 +37,7 @@ class Server:
         data = self._conn[0].recv(4096)
         print("Received encrypted message from client")
 
-        plaintext = self.__private_key.decrypt(
-            data,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        print("Successfully decrypted message")
-        print("Encryption of file is [\033[32mVALID\033[0m]")
-
-        # Split up the binary data to retrieve the file, signature, PCR and public key
-        public_key = plaintext[:451]
-        signature = plaintext[451:713]
-        pcr_value = plaintext[713:745]
-        file = plaintext[745:]
-
-        return public_key, signature, pcr_value, file
+        return data
 
     def generate_keys(self):
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=8192)
@@ -133,20 +116,48 @@ class Server:
             print("PCR value from client is [\033[31mINVALID\033[0m]")
             return False
 
+    def decrypt_message(self, message):
+        try:
+            plaintext = self.__private_key.decrypt(
+                message,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+            print("Encryption of file is [\033[32mVALID\033[0m]")
+        except:
+            print("Encryption of file is [\033[31mINVALID\033[0m]")
+            return False
 
-    def check_file_integrity(self, file, sig, sig_key, pcr_val):
-        sig_verified = self.verify_sig(file, sig, sig_key)
-        pcr_verified = self.verify_pcr(file, pcr_val)
+        # Split up the binary data to retrieve the file, signature, PCR and public key
+        public_key = plaintext[:451]
+        signature = plaintext[451:713]
+        pcr_value = plaintext[713:745]
+        file = plaintext[745:]
 
-        if sig_verified and pcr_verified:
-            server.write_file(file, "output.txt")
-            print("\033[32mFile from client passed integrity checks!\033[0m")
-        else:
-            print("\033[31mFile from client has failed integrity checks.\033[0m")
+        return public_key, signature, pcr_value, file
+
+
+    def check_file_integrity(self, enc_message):
+        result = self.decrypt_message(enc_message)
+        if result:
+            sig_key, sig, pcr_val, file = result
+
+            sig_verified = self.verify_sig(file, sig, sig_key)
+            pcr_verified = self.verify_pcr(file, pcr_val)
+
+            if sig_verified and pcr_verified:
+                server.write_file(file, "output.txt")
+                print("\033[32mFile from client passed integrity checks!\033[0m")
+                return
+
+        print("\033[31mFile from client has failed integrity checks.\033[0m")
 
 
 if __name__ == '__main__':
     server = Server('127.0.0.1', 8120)
     server.send_public_key()
-    sig_key, sig, pcr, file = server.receive_message()
-    server.check_file_integrity(file, sig, sig_key, pcr)
+    encrypted_message = server.receive_message()
+    server.check_file_integrity(encrypted_message)
