@@ -43,7 +43,7 @@ class Client:
     def send_message(self, message):
         self._sock.sendall(message)
 
-        print("Finished message data to server")
+        print("Finished sending message server")
 
     def receive_public_key(self):
         # Receive the server's public encryption key
