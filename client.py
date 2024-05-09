@@ -43,7 +43,7 @@ class Client:
     def send_message(self, message):
         self._sock.sendall(message)
 
-        print("Finished sending message server")
+        print("Sent message to server")
 
     def receive_public_key(self):
         # Receive the server's public encryption key
@@ -117,6 +117,8 @@ class Client:
         # Use TPM to extend the PCR with the hash of the file
         subprocess.run(f"./pcrextend -ha 16 -if {self._TEMP_DIR}/hash.bin", shell=True, cwd=self._TSS_DIR)
 
+        print("Extended PCR with file hash value")
+
         # Remove temporary hash file
         os.remove(self._TEMP_DIR+"/hash.bin")
 
@@ -128,6 +130,8 @@ class Client:
 
         # Format to binary
         pcr = bytes.fromhex(output.decode())
+
+        print("New PCR value has been read")
 
         return pcr
 
@@ -153,6 +157,8 @@ class Client:
                 label=None
             )
         )
+
+        print("Message has been encrypted with the server's public key")
 
         return ciphertext
 
