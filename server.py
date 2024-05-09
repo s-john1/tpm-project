@@ -103,12 +103,25 @@ class Server:
             print("Signature of file is [\033[31mINVALID\033[0m]")
             return False
 
+    def write_file(self, data, name):
+        # Write the file to the given location
+        with open(name, "wb") as f:
+            f.write(data)
+
+        print(f"File written to {name}")
+
+    def check_file_integrity(self, file, sig, sig_key):
+        verified = server.verify_sig(file, sig, sig_key)
+
+        if verified:
+            server.write_file(file, "output.txt")
+            print("\033[32mFile from client passed integrity checks!\033[0m")
+        else:
+            print("\033[31mFile from client has failed integrity checks.\033[0m")
 
 
 if __name__ == '__main__':
     server = Server('127.0.0.1', 8120)
     server.send_public_key()
     sig_key, sig, file = server.receive_message()
-
-    verified = server.verify_sig(file, sig, sig_key)
-
+    server.check_file_integrity(file, sig, sig_key)
